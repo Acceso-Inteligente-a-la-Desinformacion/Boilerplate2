@@ -75,9 +75,16 @@ class Component:
 
 # Elemento dentro de un menu
 class MenuTabItem:
-    def __init__(self, label, callback):
+    def __init__(self, label, callback=None):
         self.label = label
-        self.callback = callback
+
+        if callback == None:
+            self.callback = self.showConsoleMessage
+        else:
+            self.callback = callback
+
+    def showConsoleMessage(self):
+        print('Esto es un mensaje en consola')
 
 # Un nuevo apartado dentro del menu
 class MenuTab:

@@ -7,8 +7,7 @@ from .sew import *
 import re
 
 class AppWrapper:
-    def __init__(self, rootDir, title='Práctica de Woosh', menu = [], components = [], schema=[]):
-    
+    def __init__(self, rootDir, title='Título de la interfaz gráfica', menu = [], components = [], schema=None):
         self.db = None
 
         self.dirs = {}
@@ -16,7 +15,7 @@ class AppWrapper:
         self.dirs['data'] = os.path.join(self.dirs['root'], 'data')
         self.dirs['index'] = os.path.join(self.dirs['data'], 'Index')
 
-        if len(schema):
+        if schema:
             self.whoosh = SEW(indexDir=self.dirs['index'], schema=schema)
 
         self.gui = GUI() # Inicializa la interfaz gráfica
@@ -47,9 +46,6 @@ class AppWrapper:
             messagebox.showerror(err)
         else:
             messagebox.showinfo('Completado', f'Se han indexado {res} archivos.')
-    
-    def showConsoleMessage(self):
-        print('Esto es un mensaje en consola')
 
     def close(self):
         self.db.closeConnection() # Cierra la conexión con la base de datos
