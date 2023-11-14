@@ -1,14 +1,17 @@
 from datetime import datetime
 from src.lib.appwrapper import *
 from whoosh.fields import Schema, TEXT, KEYWORD, DATETIME, ID, STORED, NUMERIC
-from whoosh.qparser import QueryParser, MultifieldParser, OrGroup
+from whoosh.qparser import QueryParser, MultifieldParser, OrGroup, AndGroup
+
+import locale
+locale.setlocale(locale.LC_TIME, "es_ES")
 
 class App(AppWrapper):
     def __init__(self):
         self.agenda = {}
 
         super().__init__(rootDir= os.path.dirname(os.path.abspath(__file__)),
-            title="Práctica de Whoosh 3",
+            title="Práctica de Whoosh 4",
             menu=[
                 MenuTab(
                     title = 'Datos',
@@ -16,6 +19,10 @@ class App(AppWrapper):
                         MenuTabItem(
                             label = 'Cargar',
                             callback = self.store
+                        ),
+                        MenuTabItem(
+                            label = 'Listar',
+                            callback = self.list
                         ),
                         MenuTabItem(
                             label = 'Salir',
@@ -31,30 +38,24 @@ class App(AppWrapper):
                             callback = self.searchTitulo
                         ),
                         MenuTabItem(
-                            label = 'Géneros',
-                            callback = self.searchGenero
-                        ),
-                        MenuTabItem(
                             label = 'Fecha',
                             callback = self.searchFecha
                         ),
                         MenuTabItem(
-                            label = 'Modificar fecha',
-                            callback = self.searchModifyFecha
+                            label = 'Buscar título y característica',
+                            callback = self.searchCaracteristicasAndTitulo
                         )
                     ]
                 )
             ],
             components=[],
             schema=Schema(
-                titulo=TEXT(stored=True, phrase=False),
-                titulo_original=TEXT(stored=True, phrase=False),
-                fecha_estreno=DATETIME(stored=True),
-                paises=KEYWORD(stored=True, commas=True, lowercase=True),
-                generos=KEYWORD(stored=True, commas=True, lowercase=True),
-                directores=KEYWORD(stored=True, commas=True, lowercase=True),
-                sinopsis=TEXT(stored=True, phrase=False),
-                url=ID(stored=True, unique=True)
+                titulo=TEXT(stored=True),
+                comensales=NUMERIC(stored=True, numtype=int),
+                autor=ID(stored=True),
+                fecha=DATETIME(stored=True),
+                caracteristicas=KEYWORD(stored=True, commas=True),
+                introduccion=TEXT(stored=True)
             )
         )
 
@@ -62,45 +63,41 @@ class App(AppWrapper):
         def addData(writter, docsDir, doc):
             writter.add_document(
                 titulo=str(doc[0]),
-                titulo_original=str(str(doc[1])),
-                fecha_estreno=datetime.datetime.strptime(doc[2], '%d/%m/%Y'),
-                paises=str(doc[3]),
-                generos=str(doc[4]),
-                directores=str(doc[5]),
-                sinopsis=str(doc[6]),
-                url=str(doc[6])
+                comensales=str(str(doc[1])),
+                autor=str(doc[2]),
+                fecha=datetime.datetime.strptime(doc[3], "%d %B %Y"),
+                caracteristicas=str(doc[4]),
+                introduccion=str(doc[5])
             )
 
         def scrappeData():
-            baseUrl = 'https://www.elseptimoarte.net'
             itemArray = []
 
             for urlIndex in range(1, 2):
-                scrapper = Scrapper(f'https://www.elseptimoarte.net/estrenos/{urlIndex}/').get()
+                scrapper = Scrapper(f'https://www.recetasgratis.net/Recetas-de-Aperitivos-tapas-listado_receta-1_1.html').get()
 
-                items = scrapper.select('#collections > ul.elements > li')
+                items = scrapper.select('.header-gap .resultados > div .resultado')
 
                 for i in items:
-                    url = i.select_one('h3 > a')['href'].strip()
+                    url = i.select_one('.titulo')['href'].strip()
 
-                    scrapper2 = Scrapper(baseUrl + url).get()
-                    titulo = scrapper2.textIfExists(scrapper2.selectOne('#content > section.highlight:nth-child(2) dl > dd:nth-child(2)')).strip()
-                    titulo_original = scrapper2.textIfExists(scrapper2.selectOne('#content > section.highlight:nth-child(2) dl > dd:nth-child(4)')).strip()
-                    titulo_original = scrapper2.textIfExists(scrapper2.selectOne('#content > section.highlight:nth-child(2) dl > dd:nth-child(4)')).strip()
-                    fecha_estreno = scrapper2.textIfExists(scrapper2.selectOne('#content > section.highlight:nth-child(2) dl > dd:nth-child(8)')).strip()
-                    paises = scrapper2.textIfExists(scrapper2.selectOne('#content > section.highlight:nth-child(2) dl > dd:nth-child(6)')).strip()
-                    generos = scrapper2.textIfExists(scrapper2.selectOne('#datos_pelicula > .categorias')).strip()
-                    directores = scrapper2.textIfExists(scrapper2.selectOne('#content > section.highlight:nth-child(2) dl > dd:nth-child(18)')).strip()
-                    sinopsis = scrapper2.textIfExists(scrapper2.selectOne('#content > section.highlight:nth-child(3) .info')).strip()
+                    titulo = scrapper.textIfExists(i.select_one('.titulo')).strip()
+                    comensales = scrapper.textIfExists(i.select_one('.property.comensales')).strip()
+                    introduccion = scrapper.textIfExists(i.select_one('.intro')).strip()
+
+                    scrapper2 = Scrapper(url).get()
+                    autor = scrapper2.textIfExists(scrapper2.selectOne('.nombre_autor > a')).strip()
+                    fecha = scrapper2.selectOne('.date_publish').text.strip().replace('Actualizado: ', '')
+                    caracteristicas = scrapper2.textIfExists(scrapper2.selectOne('.recipe-info > .properties:nth-child(2)'), 'sin definir').replace('Características adicionales:', '')
+                    caracteristicas = ",".join([c.strip() for c in caracteristicas.split(",")] )
 
                     itemArray.append((
                         titulo,
-                        titulo_original,
-                        fecha_estreno,
-                        paises,
-                        generos,
-                        directores,
-                        sinopsis
+                        comensales,
+                        autor,
+                        fecha,
+                        caracteristicas,
+                        introduccion
                     ))
 
             res, err = self.whoosh.createIndex(addDoc=addData, docs=itemArray)
@@ -115,6 +112,18 @@ class App(AppWrapper):
         if respuesta:
             scrappeData()
 
+    def list(self):
+        def showList(results):
+            self.showMapList({
+                'TITULO': 'titulo',
+                'COMENSALES': 'comensales',
+                'AUTOR': 'autor',
+                'FECHA': 'fecha',
+                'CARACTERISTICAS ADICIONALES': 'caracteristicas'
+            }, results)
+
+        self.whoosh.getAll(showList)
+
     def showMapList(self, mapResult, results):
         content = []
         for row in results:
@@ -126,24 +135,20 @@ class App(AppWrapper):
             content.append(result)
 
         self.gui.listScrollWindow('Resultados', content)
-    
+
     def searchTitulo(self):
         def showList(results):
             self.showMapList({
                 "TITULO": 'titulo',
-                "TITULO ORIGINAL": 'titulo_original',
-                "DIRECTOR": 'directores'
+                "INTRODUCCION": 'introduccion'
             }, results)
-
+        
         def search(param, window):
-            def query(ix):
-                return MultifieldParser(['titulo', 'sinopsis'], ix.schema, group=OrGroup).parse(str(param))
-            
-            self.whoosh.rawQuery(query=query, callback=showList)
+            self.whoosh.query('titulo', str(param), showList)
 
-        newWindow = self.gui.formWindow(title="Buscar top 10 películas según título o sinopsis", components = [{
+        newWindow = self.gui.formWindow(title="Buscar top 3 recetas según título", components = [{
             'type': 'label',
-            'text': 'Introduzca consulta: ',
+            'text': 'Introduzca título: ',
             'side': 'left'
         }, {
             'type': 'text',
@@ -154,52 +159,26 @@ class App(AppWrapper):
 
         newWindow.create()
 
-    def searchGenero(self):
-        def showList(results):
-            self.showMapList({
-                "TITULO": 'titulo',
-                "TITULO ORIGINAL": 'titulo_original',
-                "PAISES": 'paises'
-            }, results)
-    
-        def createWindow(values):
-            newWindow = self.gui.formWindow(title="Buscar mensajes según cuerpo", components = [{
-                'type': 'label',
-                'text': 'Selecciona género: ',
-                'side': 'left'
-            }, {
-                'type': 'spinbox',
-                'values': values,
-                'onChangeEvent': False,
-                'func': search,
-                'side': 'left',
-                'width': 30
-            }])
-
-            newWindow.create()
-
-        def search(param, window):
-            self.whoosh.query('generos', param, showList, 20)
-
-        self.whoosh.getValuesList('generos', callback=createWindow)
-
     def searchFecha(self):
         def showList(results):
             self.showMapList({
-                "TITULO": 'titulo',
-                "FECHA": 'fecha_estreno'
-            }, results, )
+                'TITULO': 'titulo',
+                'NUMERO COMENSALES': 'comensales',
+                'AUTOR': 'autor',
+                'FECHA': 'fecha',
+                'CARACTERÍSTICAS ADICIONALES': 'caracteristicas'
+            }, results)
 
         def search(param, window):
             value = param.strip()
 
             if not re.match("\d{8}\s+\d{8}", value):
-                messagebox.showinfo("ERROR", "Formato incorrecto AAAAMMDD")
+                messagebox.showinfo("ERROR", "Formato incorrecto AAAAMMDD AAAAMMDD")
             else:
                 splitValue = value.split(' ')
-                self.whoosh.query('fecha_estreno', '['+str(splitValue[0])+' + TO '+str(splitValue[1])+']', showList)
+                self.whoosh.query('fecha', '['+str(splitValue[0])+' + TO '+str(splitValue[1])+']', showList)
 
-        newWindow = self.gui.formWindow(title="Buscar mensajes según precio", components = [{
+        newWindow = self.gui.formWindow(title="Buscar mensajes entre dos fechas", components = [{
             'type': 'label',
             'text': 'Introduzca rango de fechas AAAAMMDD AAAAMMDD: ',
             'side': 'left'
@@ -212,62 +191,50 @@ class App(AppWrapper):
 
         newWindow.create()
 
-    def searchModifyFecha(self):
-        def searchModify(param, window):
-            def showModifyList(values):
-                listValues = []
+    def searchCaracteristicasAndTitulo(self):
+        def showList(results):
+            self.showMapList({
+                'TITULO': 'titulo',
+                'NUMERO COMENSALES': 'comensales',
+                'AUTOR': 'autor',
+                'FECHA ACTUALIZACION': 'fecha',
+                'CARACTERISTICAS ADICIONALES': 'caracteristicas'
+            }, results)
 
-                if len(values):
-                    if messagebox.askyesno(title="Confirmar",message="Esta seguro que quiere modificar las fechas de estrenos de estas peliculas?"):
-                        for v in values:
-                            newValue = {
-                                'url': v['url'],
-                                'titulo': v['titulo'],
-                                'titulo_original': v['titulo_original'],
-                                'fecha_estreno': datetime.datetime.strptime(str(fecha),'%Y%m%d'),
-                                'paises': v['paises'],
-                                'generos': v['generos'],
-                                'directores': v['directores'],
-                                'sinopsis': v['sinopsis']
-                            }
-                            self.whoosh.updateQuery(newValue)
-                            listValues.append(newValue)
+        def createWindow(values):
+            def search(param, window):
+                caracteristica = '"'+newWindow.entryComponents[1].get().strip()+'"'
+                titulo = newWindow.entryComponents[3].get().strip()
+                self.whoosh.query('titulo', 'caracteristicas:'+str(caracteristica)+ ' '+titulo, callback=showList, limit=10)
 
-                self.showMapList({
-                    'TITULO': 'titulo',
-                    'FECHA DE ESTRENO': 'fecha_estreno'
-                }, listValues)
-        
-            titulo = window.entryComponents[1].get().strip()
-            fecha = window.entryComponents[3].get().strip()
+            newWindow = self.gui.formWindow(title="Buscar mensajes según cuerpo", components = [{
+                'type': 'label',
+                'text': 'Selecciona caracteristica: ',
+                'side': 'left'
+            }, {
+                'type': 'spinbox',
+                'values': values,
+                'onChangeEvent': False,
+                'func': search,
+                'side': 'left',
+                'width': 30
+            }, {
+                'type': 'label',
+                'text': 'Introduce título: ',
+                'side': 'left'
+            }, {
+                'type': 'text',
+                'onChangeEvent': False,
+                'width': 30
+            }, {
+                'type': 'button',
+                'text': 'Aceptar',
+                'func': search
+            }])
 
-            if not re.match("\d{8}", fecha):
-                messagebox.showinfo("ERROR", "Formato incorrecto AAAAMMDD")
-            else:
-                self.whoosh.query('titulo', titulo, showModifyList)
-     
-        newWindow = self.gui.formWindow(title="Buscar juegos según jugadores", components = [{
-            'type': 'label',
-            'text': 'Título: ',
-            'side': 'left'
-        }, {
-            'type': 'text',
-            'side': 'left',
-            'width': 30
-        }, {
-            'type': 'label',
-            'text': 'Fecha AAAAMMDD:',
-            'side': 'left'
-        }, {
-            'type': 'text',
-            'side': 'left',
-            'width': 15
-        }, {
-            'type': 'button',
-            'func': searchModify
-        }])
+            newWindow.create()
 
-        newWindow.create()
+        self.whoosh.getValuesList('caracteristicas', createWindow)
 
 # Lanza App
 App()
