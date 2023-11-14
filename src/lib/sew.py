@@ -54,13 +54,29 @@ class SEW:
 
             return create()
         
-    def query(self, parameter, value, callback: callable, limit=None):
+    def query(self, parameter, value, callback: callable = None, limit=None):
         ix=open_dir(self.indexDir)    
         with ix.searcher() as searcher:
             myquery = QueryParser(parameter, ix.schema).parse(str(value))
-            results = searcher.search(myquery,limit=limit)
-            callback(results)
-        
+            results = searcher.search(myquery, limit=limit)
+            if(callback != None):
+                callback(results)
+            return results
+
+    def rawQuery(self, query: callable, callback: callable = None, limit=None):
+        ix=open_dir(self.indexDir)    
+        with ix.searcher() as searcher:
+            results = searcher.search(query(ix), limit=limit)
+            if(callback != None):
+                callback(results)
+            return results
+
+    def updateQuery(self, item):
+        ix=open_dir(self.indexDir)
+        writer = ix.writer()
+        writer.update_document(**item)
+        writer.commit()
+            
     def getAll(self, callback: callable):
         ix=open_dir(self.indexDir)
         with ix.searcher() as searcher:
